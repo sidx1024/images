@@ -6,6 +6,12 @@ Native Win32 + Direct2D + WIC in Rust: a ~480 KB exe that opens a photo in about
 
 <img src="assets/images.png" width="96" alt="Images app icon">
 
+## Download
+
+Grab `images.exe` from the [latest release](https://github.com/sidx1024/images/releases/latest) — it's a single portable exe, no installer or runtime needed (Windows 10 1903+ / Windows 11, x64). `SHA256SUMS.txt` on the release lets you verify the download.
+
+The exe isn't code-signed yet, so Windows SmartScreen may say "Windows protected your PC" the first time: choose **More info → Run anyway**. To use it from Explorer's "Open with" menu, see [Open with / default app](#open-with--default-app).
+
 ## Features
 
 - **Viewing**: any format Windows has a codec for (JPEG, PNG, GIF, WebP, HEIC/AVIF, camera RAW, …), EXIF orientation, embedded color profiles converted to sRGB.
@@ -41,4 +47,13 @@ Windows only lets the user choose default apps, so pick Images in **Settings > A
 
 ```
 cargo test --release
+```
+
+## Releasing
+
+Bump `version` in `Cargo.toml`, commit, then tag and push — GitHub Actions builds, tests and publishes the release with `images.exe`, a zip and checksums:
+
+```
+git tag v0.1.0
+git push origin v0.1.0
 ```
