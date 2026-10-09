@@ -5,9 +5,9 @@ Copy these into Partner Center when creating the submission.
 ## Properties
 
 - **Category:** Photo & video
-- **Privacy policy URL:** https://github.com/sidx1024/images/blob/main/PRIVACY.md
-- **Website:** https://github.com/sidx1024/images
-- **Support contact:** https://github.com/sidx1024/images/issues
+- **Privacy policy URL:** https://github.com/sidx1024/images-app/blob/main/PRIVACY.md
+- **Website:** https://github.com/sidx1024/images-app
+- **Support contact:** https://github.com/sidx1024/images-app/issues
 - **System requirements:** Windows 10 version 1903 or later, x64
 
 ## Age ratings

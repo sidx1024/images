@@ -20,7 +20,7 @@
 
     <Icon Id="ImagesIcon" SourceFile="$(var.Icon)" />
     <Property Id="ARPPRODUCTICON" Value="ImagesIcon" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/sidx1024/images" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/sidx1024/images-app" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
     <StandardDirectory Id="LocalAppDataFolder">

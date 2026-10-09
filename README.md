@@ -1,4 +1,4 @@
-# images
+# images-app
 
 Images app for Windows — a fast, minimal photo viewer that looks and feels like the Windows 11 Photos app, without the wait.
 
@@ -10,7 +10,7 @@ Native Win32 + Direct2D + WIC in Rust: a ~480 KB exe that opens a photo in about
 
 ## Download
 
-From the [latest release](https://github.com/sidx1024/images/releases/latest) (Windows 10 1903+ / Windows 11, x64):
+From the [latest release](https://github.com/sidx1024/images-app/releases/latest) (Windows 10 1903+ / Windows 11, x64):
 
 - **`images-<version>-x64.msi`** — the installer (recommended). Installs for your user only, no admin prompt: adds Images to the Start menu, Explorer's "Open with" menu and Settings > Default apps. Uninstall from Settings > Apps > Installed apps; installing a newer version upgrades in place.
 - **`images.exe`** — portable: a single exe, nothing to install. See [Open with / default app](#open-with--default-app) to register it by hand.

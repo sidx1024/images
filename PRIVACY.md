@@ -10,4 +10,4 @@ Images is a photo viewer that runs entirely on your PC.
 - **Local settings only.** Preferences such as the theme, window position and whether the info pane is open are stored in your Windows user profile and never leave your PC. Uninstalling Images removes them (Microsoft Store version) or leaves them in `HKEY_CURRENT_USER\Software\Images` (installer and portable versions).
 - **Files you act on.** Copying an image places it on the Windows clipboard. Deleting an image moves it to the Recycle Bin. Both only happen when you choose to.
 
-Questions: open an issue at https://github.com/sidx1024/images/issues.
+Questions: open an issue at https://github.com/sidx1024/images-app/issues.
