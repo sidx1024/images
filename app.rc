@@ -2,8 +2,8 @@
 1 ICON "assets/images.ico"
 
 1 VERSIONINFO
-FILEVERSION 0,1,1,0
-PRODUCTVERSION 0,1,1,0
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
 FILEOS 0x40004
 FILETYPE 0x1
 BEGIN
@@ -13,8 +13,8 @@ BEGIN
     BEGIN
       VALUE "FileDescription", "Images"
       VALUE "ProductName", "Images"
-      VALUE "FileVersion", "0.1.1"
-      VALUE "ProductVersion", "0.1.1"
+      VALUE "FileVersion", "1.0.0"
+      VALUE "ProductVersion", "1.0.0"
       VALUE "InternalName", "images"
       VALUE "OriginalFilename", "images.exe"
     END
