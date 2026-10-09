@@ -1,12 +1,20 @@
 //! Per-user (HKCU) registration so Images appears in Explorer's "Open with" menu and in
 //! Settings > Default apps. No admin rights needed; `--unregister` removes exactly what it adds.
+//!
+//! The MSI installer writes the same keys (packaging/wix). When Images runs from its MSIX package,
+//! the package manifest declares the file types instead and Windows owns that registration.
 
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 
 use std::os::windows::ffi::OsStringExt;
+use std::sync::OnceLock;
+use windows::core::PWSTR;
 use windows::core::{Result, PCWSTR};
-use windows::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_NO_MORE_ITEMS, E_FAIL, WIN32_ERROR};
+use windows::Win32::Foundation::{
+    ERROR_FILE_NOT_FOUND, ERROR_INSUFFICIENT_BUFFER, ERROR_NO_MORE_ITEMS, E_FAIL, WIN32_ERROR,
+};
+use windows::Win32::Storage::Packaging::Appx::GetCurrentApplicationUserModelId;
 use windows::Win32::System::Registry::*;
 
 use windows::core::{w, Interface};
@@ -34,8 +42,75 @@ const APP_NAME: &str = "Images";
 const DISPLAY_NAME: &str = APP_NAME;
 const DESCRIPTION: &str = "A fast, minimal photo viewer";
 
-/// Tell Windows that handlers changed, as Microsoft's registration sample does: flush synchronously,
-/// then give system processes (Settings' Default apps index) a moment to process it before we exit.
+/// File types declared by the MSIX package and the MSI installer.
+fn packaged_extensions() -> impl Iterator<Item = &'static str> {
+    include_str!("../../packaging/extensions.txt")
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with('.'))
+}
+
+/// The app's AppUserModelID when it runs from its MSIX package (Store or sideloaded), else None.
+pub fn package_aumid() -> Option<&'static str> {
+    static AUMID: OnceLock<Option<String>> = OnceLock::new();
+    AUMID
+        .get_or_init(|| unsafe {
+            let mut len = 0u32;
+            if GetCurrentApplicationUserModelId(&mut len, None) != ERROR_INSUFFICIENT_BUFFER {
+                return None; // APPMODEL_ERROR_NO_APPLICATION: not packaged
+            }
+            let mut buf = vec![0u16; len as usize];
+            if GetCurrentApplicationUserModelId(&mut len, Some(PWSTR(buf.as_mut_ptr()))).is_err() {
+                return None;
+            }
+            let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            Some(String::from_utf16_lossy(&buf[..end]))
+        })
+        .as_deref()
+}
+
+/// Extensions Images is offered for in Default apps: the package's declared types, or what
+/// `--register` / the MSI recorded.
+fn registered_extensions() -> Vec<String> {
+    if package_aumid().is_some() {
+        packaged_extensions().map(String::from).collect()
+    } else {
+        unsafe { value_names(&format!(r"{CAPABILITIES}\FileAssociations")) }
+    }
+}
+
+/// A string value under `root\<path>`, if present.
+unsafe fn reg_string(root: HKEY, path: &str, name: &str) -> Option<String> {
+    let mut buf = [0u16; 512];
+    let mut bytes = std::mem::size_of_val(&buf) as u32;
+    RegGetValueW(
+        root,
+        PCWSTR(wide(path).as_ptr()),
+        PCWSTR(wide(name).as_ptr()),
+        RRF_RT_REG_SZ,
+        None,
+        Some(buf.as_mut_ptr() as _),
+        Some(&mut bytes),
+    )
+    .ok()
+    .ok()?;
+    let len = (bytes as usize / 2).saturating_sub(1);
+    Some(String::from_utf16_lossy(&buf[..len]))
+}
+
+/// Whether the running exe is the one the MSI installer put in place (it records its folder), in
+/// which case the installer owns the registration and uninstall removes it.
+pub fn installed_by_msi() -> bool {
+    let Some(dir) = (unsafe { reg_string(HKEY_CURRENT_USER, VENDOR_KEY, "InstallDir") }) else {
+        return false;
+    };
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|p| p.to_path_buf()));
+    let norm = |p: &std::path::Path| p.to_string_lossy().trim_end_matches('\\').to_lowercase();
+    exe_dir.is_some_and(|d| norm(&d) == norm(std::path::Path::new(&dir)))
+}
+
 /// Per-user Start menu shortcut, as an installer would create, so Images can be launched from Start.
 fn start_menu_shortcut() -> Option<std::path::PathBuf> {
     unsafe {
@@ -63,6 +138,8 @@ fn create_start_menu_shortcut(exe: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// Tell Windows that handlers changed, as Microsoft's registration sample does: flush synchronously,
+/// then give system processes (Settings' Default apps index) a moment to process it before we exit.
 fn notify_associations_changed() {
     unsafe {
         // SHCNE_ASSOCCHANGED requires SHCNF_IDLIST with both items null (SHChangeNotify reference).
@@ -302,7 +379,7 @@ pub fn unregister() -> Result<()> {
 /// default, as Windows resolves it). Returns (defaults, registered), with registered 0 if not registered,
 /// or None if Windows couldn't answer for some type (so no possibly-wrong count is shown).
 pub fn default_status() -> Option<(usize, usize)> {
-    let exts: Vec<String> = unsafe { value_names(&format!(r"{CAPABILITIES}\FileAssociations")) };
+    let exts = registered_extensions();
     let mut defaults = 0;
     for ext in &exts {
         if is_default_for(ext)? {
@@ -314,7 +391,7 @@ pub fn default_status() -> Option<(usize, usize)> {
 
 /// Whether Images is registered as a handler for `ext` (".jpg"), i.e. offered in Default apps.
 pub fn is_registered_for(ext: &str) -> bool {
-    unsafe { value_names(&format!(r"{CAPABILITIES}\FileAssociations")) }
+    registered_extensions()
         .iter()
         .any(|e| e.eq_ignore_ascii_case(ext))
 }
@@ -333,7 +410,18 @@ pub fn is_default_for(ext: &str) -> Option<bool> {
             .ok()?;
         let name = progid.to_string().ok();
         CoTaskMemFree(Some(progid.0 as _));
-        Some(name?.eq_ignore_ascii_case(PROGID))
+        let name = name?;
+        match package_aumid() {
+            // Package file types get generated "AppX…" ProgIDs that name their app.
+            // A failed lookup means "can't tell", not "someone else".
+            Some(aumid) => reg_string(
+                HKEY_CLASSES_ROOT,
+                &format!(r"{name}\Application"),
+                "AppUserModelID",
+            )
+            .map(|id| id.eq_ignore_ascii_case(aumid)),
+            None => Some(name.eq_ignore_ascii_case(PROGID)),
+        }
     }
 }
 
@@ -341,9 +429,10 @@ pub fn is_default_for(ext: &str) -> Option<bool> {
 /// Settings > Apps > Default apps (Windows 11 2023-04 update and later; older builds open the main page).
 /// Must go through ShellExecute; explorer.exe would treat the URI as a path.
 pub fn open_default_apps_settings(hwnd: windows::Win32::Foundation::HWND) {
-    let uri = wide(format!(
-        "ms-settings:defaultapps?registeredAppUser={APP_NAME}"
-    ));
+    let uri = wide(match package_aumid() {
+        Some(aumid) => format!("ms-settings:defaultapps?registeredAUMID={aumid}"),
+        None => format!("ms-settings:defaultapps?registeredAppUser={APP_NAME}"),
+    });
     unsafe {
         ShellExecuteW(
             Some(hwnd),

@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Per-user MSI (no admin prompt): installs to %LOCALAPPDATA%\Programs\Images, adds a Start menu
+     shortcut and the same "Open with" / Default apps registration as `images.exe -register`.
+     Uninstall (Settings > Apps > Installed apps) removes all of it; app settings are kept.
+     Built by build-msi.ps1, which passes Version, Exe, Icon and Extensions. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Images"
+    Manufacturer="sidx1024"
+    Version="$(var.Version)"
+    UpgradeCode="64AF9BC5-D816-4662-AD66-2D18E6A7F58A"
+    Scope="perUser"
+    Language="1033">
+
+    <SummaryInformation Description="Images - a fast, minimal photo viewer" />
+    <!-- Remove the old version inside the transaction, so a failed upgrade rolls back to it. -->
+    <MajorUpgrade Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of Images is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="ImagesIcon" SourceFile="$(var.Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="ImagesIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/sidx1024/images" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Images" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Images" Title="Images">
+      <ComponentGroupRef Id="ImagesComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ImagesComponents" Directory="INSTALLFOLDER">
+      <!-- Per-user components need an HKCU key path rather than a file (ICE38). -->
+      <Component Id="Executable">
+        <File Id="ImagesExe" Name="images.exe" Source="$(var.Exe)" KeyPath="no" />
+        <RegistryValue Root="HKCU" Key="Software\Images" Name="InstallDir" Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
+      </Component>
+
+      <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder">
+        <Shortcut Id="ImagesShortcut" Name="Images" Description="A fast, minimal photo viewer"
+                  Target="[#ImagesExe]" WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\Images" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <!-- Mirrors src/platform/register.rs. Never sets an extension's default value: Windows only
+           lets the user choose defaults (Settings > Apps > Default apps). -->
+      <Component Id="Registration">
+        <RegistryKey Root="HKCU" Key="Software\Classes\Images.Image" ForceDeleteOnUninstall="yes">
+          <RegistryValue Type="string" Value="Image" KeyPath="yes" />
+          <RegistryValue Key="DefaultIcon" Type="string" Value="&quot;[#ImagesExe]&quot;,0" />
+          <RegistryValue Key="Application" Name="ApplicationName" Type="string" Value="Images" />
+          <RegistryValue Key="Application" Name="ApplicationDescription" Type="string" Value="A fast, minimal photo viewer" />
+          <RegistryValue Key="Application" Name="ApplicationIcon" Type="string" Value="&quot;[#ImagesExe]&quot;,0" />
+          <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[#ImagesExe]&quot; &quot;%1&quot;" />
+        </RegistryKey>
+
+        <RegistryKey Root="HKCU" Key="Software\Classes\Applications\images.exe" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="FriendlyAppName" Type="string" Value="Images" />
+          <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[#ImagesExe]&quot; &quot;%1&quot;" />
+          <?foreach ext in $(var.Extensions)?>
+          <RegistryValue Key="SupportedTypes" Name="$(var.ext)" Type="string" Value="" />
+          <?endforeach?>
+        </RegistryKey>
+
+        <RegistryKey Root="HKCU" Key="Software\Images\Capabilities" ForceDeleteOnUninstall="yes">
+          <RegistryValue Name="ApplicationName" Type="string" Value="Images" />
+          <RegistryValue Name="ApplicationDescription" Type="string" Value="A fast, minimal photo viewer" />
+          <RegistryValue Name="ApplicationIcon" Type="string" Value="&quot;[#ImagesExe]&quot;,0" />
+          <?foreach ext in $(var.Extensions)?>
+          <RegistryValue Key="FileAssociations" Name="$(var.ext)" Type="string" Value="Images.Image" />
+          <?endforeach?>
+        </RegistryKey>
+
+        <RegistryValue Root="HKCU" Key="Software\RegisteredApplications" Name="Images" Type="string" Value="Software\Images\Capabilities" />
+
+        <!-- Only our value in each shared extension key. -->
+        <?foreach ext in $(var.Extensions)?>
+        <RegistryValue Root="HKCU" Key="Software\Classes\$(var.ext)\OpenWithProgids" Name="Images.Image" Type="string" Value="" />
+        <?endforeach?>
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

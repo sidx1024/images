@@ -16,7 +16,9 @@ use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
-use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+use windows::Win32::UI::WindowsAndMessaging::{
+    MessageBoxW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK,
+};
 
 fn main() {
     let first = std::env::args_os().nth(1);
@@ -41,6 +43,29 @@ fn main() {
 
 /// Runs a registration command; there's no console (GUI subsystem), so failures get a message box.
 fn run_registration(f: fn() -> windows::core::Result<()>) -> i32 {
+    if register::package_aumid().is_some() {
+        // Packaged (Store/MSIX): the manifest declares the file types; writes here would be virtualized.
+        unsafe {
+            MessageBoxW(
+                None,
+                w!("Images was installed as a package, so Windows manages its file types. Choose defaults in Settings > Apps > Default apps."),
+                w!("Images"),
+                MB_ICONINFORMATION | MB_OK,
+            );
+        }
+        return 0;
+    }
+    if register::installed_by_msi() {
+        unsafe {
+            MessageBoxW(
+                None,
+                w!("Images was installed with its installer, which manages its registration. To remove Images, uninstall it from Settings > Apps > Installed apps."),
+                w!("Images"),
+                MB_ICONINFORMATION | MB_OK,
+            );
+        }
+        return 0;
+    }
     // COM is needed to enumerate installed WIC codecs (the extensions to register).
     let result = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) }
         .ok()

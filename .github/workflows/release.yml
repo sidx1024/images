@@ -2,9 +2,12 @@ name: Release
 
 # Push a version tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`) to build and publish a release.
 # "Run workflow" on the Actions tab builds the same artifacts without publishing.
+# Pushes to main and pull requests build and upload the same artifacts, so packaging breaks early.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -36,11 +39,41 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      - name: Build MSI installer
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          ./packaging/build-msi.ps1 -OutDir dist
+
+      # Store package: set the repository variables to the values in Partner Center > Product identity.
+      # Unsigned (the Store signs it), so it's a workflow artifact for submission, not a release download.
+      - name: Build MSIX package
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+          MSIX_DISPLAY_NAME: ${{ vars.MSIX_DISPLAY_NAME }}
+        run: |
+          $vars = "MSIX_IDENTITY_NAME", "MSIX_PUBLISHER", "MSIX_PUBLISHER_DISPLAY_NAME"
+          $set = @($vars | Where-Object { [Environment]::GetEnvironmentVariable($_) })
+          $identity = @{}
+          if ($set.Count -eq $vars.Count) {
+            $identity.IdentityName = $env:MSIX_IDENTITY_NAME
+            $identity.Publisher = $env:MSIX_PUBLISHER
+            $identity.PublisherDisplayName = $env:MSIX_PUBLISHER_DISPLAY_NAME
+            if ($env:MSIX_DISPLAY_NAME) { $identity.DisplayName = $env:MSIX_DISPLAY_NAME }
+          } elseif ($set.Count) {
+            Write-Error "Set all of $($vars -join ', ') (Partner Center > Product identity), or none"; exit 1
+          } else {
+            Write-Warning "Store identity variables not set: building with placeholder identity (not submittable)"
+          }
+          ./packaging/build-msix.ps1 -OutDir store @identity
+
       - name: Package
         shell: pwsh
         run: |
           $name = if ("${{ github.ref_type }}" -eq "tag") { "${{ github.ref_name }}" } else { "dev-${{ github.sha }}".Substring(0, 11) }
-          New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/images.exe dist/images.exe
           Compress-Archive -Path target/release/images.exe, README.md -DestinationPath "dist/images-$name-windows-x64.zip"
           Get-ChildItem dist -File | Get-FileHash -Algorithm SHA256 |
@@ -52,6 +85,11 @@ jobs:
         with:
           name: images-windows-x64
           path: dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: images-store-msix
+          path: store/*.msix
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
